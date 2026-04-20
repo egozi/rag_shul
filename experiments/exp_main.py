@@ -1,12 +1,13 @@
 """
 main_template2.py — RAG app template (YAML config)
 ====================================================
-Loads all pipeline settings from config/config.yaml and runs an
+Loads all pipeline settings from exp_config.yaml and runs an
 interactive query loop over the Shulchan Arukh corpus.
 
 Usage:
-    python main_template2.py
-    python main_template2.py --chunks chunks_v4.json
+    exp_main.py
+    shulchan_aruch_rag.json
+    
 """
 
 import argparse
@@ -22,14 +23,14 @@ from retriever import retrieve
 # ─── Load config ──────────────────────────────────────────────────────────────
 
 HERE        = Path(__file__).parent
-CONFIG_PATH = HERE / "config" / "config.yaml"
+CONFIG_PATH = HERE /  "exp_config.yaml"
 
 with open(CONFIG_PATH, encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
 
 # Paths
-TEXT_FILE = (HERE / cfg["paths"]["text_file"]).resolve()
-XLSX_PATH = (HERE / cfg["paths"]["xlsx_path"]).resolve()
+JSON_FILE = (HERE / cfg["paths"]["json_file"]).resolve()
+CSV_PATH = (HERE / cfg["paths"]["csv_path"]).resolve()
 
 # Param dicts (passed as **kwargs to pipeline functions)
 chunk_params     = cfg["chunker"]
