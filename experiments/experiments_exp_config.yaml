@@ -1,0 +1,26 @@
+# exp_config.yaml — RAG pipeline configuration (experiments)
+# ===========================================================
+
+paths:
+  json_file: "../data/processed/shulchan_aruch_rag.json"  # קורפוס — קלט ל-chunker
+  csv_path:  "../data/eval/sa_eval.csv"                   # שאלות + ground-truth סימן/סעיף
+
+chunker:
+  chunk_fields:           # שדות seif שמצטרפים לטקסט הצ'אנק
+    - text
+    # - hagah             # הסר הערה להוספת פירוש רמ"א
+    # - siman_title       # הסר הערה להוספת כותרת הסימן
+
+embeddings:
+  model: "intfloat/multilingual-e5-large"
+  batch_size: 32
+  prefix_passage: "passage: "
+  prefix_query:   "query: "
+
+retrieval:
+  top_k:          3      # תוצאות שחוזרות למשתמש
+  top_k_retrieve: 50     # צ'אנקים לחישוב Recall@K
+  score_threshold: 0.85
+
+evaluation:
+  top_k_context: 3       # צ'אנקים שנשלחים ל-LLM (לשימוש עתידי)
