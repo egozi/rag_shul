@@ -18,7 +18,7 @@ embeddings:
   prefix_query:   "query: "
 
 retrieval:
-  top_k:          3      # תוצאות שחוזרות למשתמש
+  top_k:          1      # תוצאות שחוזרות למשתמש
   top_k_retrieve: 50     # צ'אנקים לחישוב Recall@K
   score_threshold: 0.85
 
