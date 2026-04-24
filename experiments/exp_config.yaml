@@ -1,9 +1,35 @@
 # exp_config.yaml — RAG pipeline configuration (experiments)
 # ===========================================================
+# הגדרות הניסוי. נתיבים יחסיים לתיקיית experiments/.
+#
+# זרימת הפייפליין (exp_main.py):
+#   1. chunker.build_csv:        json_file  →  chunks_csv
+#   2. embed.build_embeddings:   chunks_csv →  embeddings_npy
+#   3. retriever (retrieval_npy): chunks_csv + embeddings_npy + query → תוצאות
+#   4. evaluator:                 retriever + csv_path → דוח
+#
+# Skip logic (מבוצע ב-exp_main):
+#   • embeddings_npy קיים → מדלגים על שלבים 1 ו-2
+#   • chunks_csv קיים אך אין npy → מדלגים רק על שלב 1
+#   • שניהם חסרים → הרצה מלאה
+#   • --force-rebuild → מוחק ומריץ הכל מחדש
+
+# מצב הרצה: full = נתונים מלאים | mini = נתוני בדיקה קטנים (smoke test)
+# ניתן להחליף גם בשורת הפקודה: --mode full / --mode mini
+run_mode: full        # full | mini
 
 paths:
-  text_file: "../data/preprocessed/shulchan_rag.json"  # input data file (JSON format)
-  csv_path:  "../data/eval/sa_eval.csv"
+  full:
+    json_file:       "../data/processed/shulchan_aruch_rag.json"   # input
+    chunks_csv:      "../data/processed/chunks_v1.csv"             # intermediate
+    embeddings_npy:  "../data/processed/embeddings_v1.npy"         # intermediate
+    csv_path:        "../data/eval/sa_eval.csv"                    # eval questions
+
+  mini:
+    json_file:       "../data/processed/mini_shulchan_aruch_rag.json"
+    chunks_csv:      "../data/processed/mini_chunks_v1.csv"
+    embeddings_npy:  "../data/processed/mini_embeddings_v1.npy"
+    csv_path:        "../data/eval/mini_sa_eval.csv"
 
 chunker:
   chunk_size: 200       # words per chunk
@@ -11,33 +37,32 @@ chunker:
   mode: siman_boundary  # "siman_boundary" | "sliding_window"
   chunk_fields:         # ordered list of seif fields to join into the chunk text
     - text
-    - hagah             # uncomment to include Rema commentary
-    # - siman_title     # uncomment to prepend the siman topic heading to each chunk
+    - hagah             # comment out to exclude Rema commentary
+    # - siman_title     # uncomment to prepend the siman topic heading
 
 embeddings:
   model: "intfloat/multilingual-e5-large"
   batch_size: 32
-  prefix_passage: "passage: "
-  prefix_query:   "query: "
+  prefix_passage: "passage: "   # נוסף ל-breadcrumb+text בזמן build_embeddings
+  prefix_query:   "query: "     # נוסף ל-query בזמן retriever.retrieve
 
 retrieval:
   top_k:          1     # chunks returned to the user / LLM
   top_k_retrieve: 50    # chunks retrieved for Recall@K computation
   score_threshold: 0.85
 
-
 evaluation:
-  # Choose type: 'retrieval' (ready) or 'llm_qa' (future)
+  # סוג הערכה: 'retrieval' (Exists) או 'llm_qa' (future)
   type: "retrieval"
 
-  # --- parameters for the retrieval evaluator ---
-  k_values:       [1, 3, 5, 10, 18, 30, 50]  # K values for the Recall report
-  target_k:       50                          # K to compare against the target
-  target_recall:  0.85                        # Recall target (0-1)
-  retrieve_k:     100                         # how many results to retrieve (must be >= max(k_values))
-  max_questions:  null                        # null = all questions; number = only first N
+  # --- פרמטרים למעריך ה-retrieval ---
+  k_values:       [1, 3, 5, 10, 18, 30, 50]  # ערכי K לדוח Recall
+  target_k:       50                          # K להשוואה מול היעד
+  target_recall:  0.85                        # יעד Recall (0-1)
+  retrieve_k:     100                         # כמה תוצאות להחזיר (>= max(k_values))
+  max_questions:  null                        # null = כל השאלות; מספר = רק N הראשונות
 
-  # --- parameters for the llm_qa evaluator (future) ---
+  # --- פרמטרים למעריך ה-llm_qa (future) ---
   llm_model:           "gpt-4o"
-  top_k_context:       3     # chunks sent to the LLM for answer generation
+  top_k_context:       3     # chunks שנשלחים ל-LLM לצורך יצירת תשובה
   sleep_between_calls: 0.3
