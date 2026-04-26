@@ -4,25 +4,34 @@
 # Paths are relative to the project root (directory containing config.py).
 
 paths:
-  text_file: "../study ai/datasete/Shulchan Arukh, Orach Chayim - he - Torat Emet 363.txt"
+  text_file: "data/Shulchan Arukh, Orach Chayim - he - Torat Emet 363.txt"
   xlsx_path: "שולחן_ערוך_כל_השאלות.xlsx"
+  qa_csv: "data/ShulchanAruchVerificationAndComparison.csv"
   schema_json: "data/shulchan_aruch_rag.json"
-  chunks_json: "data/chunks.json"
+  chunks_json: "data/chunks_siman.json"
 
 chunker:
   chunk_size: 200       # words per chunk
   overlap: 50           # words shared between consecutive chunks
-  mode: seif            # "seif" | "siman" | "sliding_window"
+  mode: siman            # "seif" | "siman" | "sliding_window"
   chunk_fields:         # ordered list of seif fields to join into the chunk text
     - text
-    # - hagah             # uncomment to include Rema commentary
+    - hagah             # uncomment to include Rema commentary
     # - siman_title       # uncomment to prepend the siman topic heading to each chunk
 
 embeddings:
-  model: "intfloat/multilingual-e5-small"
+  model: "intfloat/multilingual-e5-large"
   batch_size: 32
   prefix_passage: "passage: "
   prefix_query: "query: "
+  chroma_dir: "embedder/chroma_db"
+  collection_name: "shulchan_arukh_seifs"
+
+# embeddings:
+#   model: "intfloat/multilingual-e5-large"
+#   embeddings_path: "seifs_v6_combined_intfloat_multilingual_e5_large.npy"
+#   batch_size: 32
+#   seifs_path: "seifs_v6_combined.json"
 
 retrieval:
   top_k: 3             # chunks returned to the user / LLM
