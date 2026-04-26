@@ -37,7 +37,6 @@ chunker:
   overlap: 50           # words shared between consecutive chunks
   mode: siman_boundary  # "siman_boundary" | "sliding_window"
   chunk_fields:         # ordered list of seif fields to join into the chunk text
-   # - siman_sign     # uncomment to prepend the siman topic heading
     - text
     - hagah             # comment out to exclude Rema commentary
 
@@ -46,6 +45,9 @@ embeddings:
   batch_size: 32
   prefix_passage: "passage: "   # prepended to breadcrumb+text during build_embeddings
   prefix_query:   "query: "     # prepended to the query during retriever.retrieve
+  enrich_fields:  []                # default — backwards compatible
+  enrich_separator: " | "
+
 
 retrieval:
   top_k:          3     # chunks returned to the user / LLM
