@@ -44,7 +44,7 @@ from evaluation import get_evaluator, list_evaluators
 
 # ─── Load config ───────────────────────────────────────────────────────────────
 HERE        = Path(__file__).parent
-CONFIG_PATH = HERE / "exp_config.yaml"
+CONFIG_PATH = HERE / "../config/config.yaml"
 
 with open(CONFIG_PATH, encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
