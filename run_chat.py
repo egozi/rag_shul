@@ -1,19 +1,20 @@
-import os
 import sys
 from http.server import HTTPServer
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+CHAT_UI = Path(__file__).parent / "chat-ui"
 
-sys.path.insert(0, str(Path(__file__).parent))
+load_dotenv(CHAT_UI / ".env")
+
+sys.path.insert(0, str(CHAT_UI))
 from api.chat import handler as ChatHandler
 
 
 class LocalHandler(ChatHandler):
     def do_GET(self):
         try:
-            with open(Path(__file__).parent / "index.html", "rb") as f:
+            with open(CHAT_UI / "index.html", "rb") as f:
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
