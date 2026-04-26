@@ -134,3 +134,4 @@ dmypy.json
 # Cursor
 .cursorignore
 .cursorindexingignore
+.vercel

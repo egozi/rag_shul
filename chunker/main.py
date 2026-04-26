@@ -20,7 +20,9 @@ HERE = Path(__file__).parent.parent  # project root
 
 
 def main():
-    cfg_paths = load_config().get("paths", {})
+    cfg       = load_config()
+    run_mode  = cfg.get("run_mode", "full")
+    cfg_paths = cfg.get("paths", {}).get(run_mode, cfg.get("paths", {}))
     default_input  = str(HERE / cfg_paths.get("schema_json", "data/shulchan_aruch_rag.json"))
     default_output = str(HERE / cfg_paths.get("chunks_json", "data/chunks.json"))
 
