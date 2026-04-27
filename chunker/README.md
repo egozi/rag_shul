@@ -24,7 +24,7 @@ JSON file with this structure (`data/processed/shulchan_aruch_rag.json`):
 
 ## Output
 
-`data/chunks.json` — a JSON array, one object per chunk:
+`on config: chunks_json: data/chunks.json` — a JSON array, one object per chunk:
 ```json
 [
   { "id": 0, "siman": 1, "seif": 1, "siman_seif": "סימן 1, סעיף 1", "text": "..." },
