@@ -1,3 +1,7 @@
 sentence-transformers
 chromadb
+lancedb
+qdrant-client
+pymilvus
 pandas
+numpy
