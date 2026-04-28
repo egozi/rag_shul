@@ -17,28 +17,21 @@
 # Run mode: full = real data | mini = small smoke-test data
 # Can also be overridden on the command line: --mode full / --mode mini
 run_mode: mini        # full | mini
+rebuild: false
 
 paths:
 
-  full:
-    json_file:       "../data/processed/shulchan_aruch_rag.json"
-    chunks_csv:      "chunks_v1.csv"                              # ← changed
-    embeddings_npy:  "embeddings_v1.npy"
-    csv_path:        "../data/eval/sa_eval.csv"
-    schema_json: "data/processed/shulchan_aruch_rag.json"
-    chunks_json: "data/chunks_siman.json"
-
-  mini:
-    json_file:       "../data/processed/mini_shulchan_aruch_rag.json"
-    chunks_csv:      "mini_chunks_v1.csv"
-    embeddings_npy:  "mini_embeddings_v1.npy"
-    csv_path:        "../data/eval/mini_sa_eval.csv"
-    schema_json: "data/processed/shulchan_aruch_rag.json"
-    chunks_json: "data/chunks_siman.json"
-
+  json_file:       "../data/processed/shulchan_aruch_rag.json"
+  chunks_csv:      "chunks_v1.csv"                              # ← changed
+  embeddings_npy:  "embeddings_v1.npy"
+  csv_path:        "../data/eval/sa_eval.csv"
+  schema_json: "data/processed/shulchan_aruch_rag.json"
+  chunks_json: "data/chunks_siman.json"
 
 chunker:
   chunk_size: 200       # words per chunk
+  chunk_output_file: &chunk_file "chunks.json"
+  output_type: "json"
   overlap: 50           # words shared between consecutive chunks
   mode: seif            # "seif" | "siman" | "sliding_window"
   chunk_fields:         # ordered list of seif fields to join into the chunk text
@@ -47,7 +40,9 @@ chunker:
     # - siman_title       # uncomment to prepend the siman topic heading to each chunk
 
 embeddings:
+  chunk_file: *chunk_file
   model: "intfloat/multilingual-e5-large"
+  prompt: ""
   batch_size: 32
   prefix_passage: "passage: "   # prepended to breadcrumb+text during build_embeddings
   prefix_query:   "query: "     # prepended to the query during retriever.retrieve
@@ -56,9 +51,13 @@ embeddings:
 
 
 retrieval:
+  chunk_file: *chunk_file
   top_k:          3     # chunks returned to the user / LLM
   top_k_retrieve: 10    # chunks retrieved for Recall@K computation
   score_threshold: 0.85
+
+query:
+  prompt: ""
 
 evaluation:
   # Evaluator type: 'retrieval' (Exists) or 'llm_qa' (future)
