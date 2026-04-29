@@ -33,7 +33,7 @@ chunker:
   chunk_output_file: &chunk_file "chunks.json"
   output_type: "json"
   overlap: 50           # words shared between consecutive chunks
-  mode: seif            # "seif" | "siman" | "sliding_window"
+  mode: siman            # "seif" | "siman" | "sliding_window"
   chunk_fields:         # ordered list of seif fields to join into the chunk text
     - text
     - hagah             # uncomment to include Rema commentary
