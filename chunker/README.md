@@ -42,10 +42,13 @@ chunker:
   mode: seif            # seif | siman | sliding_window
   chunk_size: 200       # words per chunk (sliding_window only)
   overlap: 50           # overlapping words between chunks (sliding_window only)
-  chunk_fields:
+  chunk_fields:         # seif-level fields joined into the chunk text
     - text              # always included
     # - hagah           # uncomment to append Rema commentary
     # - siman_title     # uncomment to prepend the siman heading
+  siman_fields:         # siman-level fields prepended to every chunk (all modes)
+    # - hilchot_group   # uncomment to prepend the halachic category
+    # - siman_sign      # uncomment to prepend the siman sign/marker
 ```
 
 | Mode | Description |
