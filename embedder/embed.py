@@ -1,36 +1,28 @@
 """
 embed.py — Embedding layer for Shulchan Arukh RAG
 ===================================================
-Two output paths:
-  1. NPY matrix (for the retrieval_npy retriever) — build_embeddings(...)
-  2. ChromaDB   (for the legacy Chroma-based retriever) — store_in_chroma(...) via main()
+Reads chunks.csv (output of the chunker by Izar Dahan) and stores
+sentence embeddings in ChromaDB.
 
-Both paths share the same passage-text formula (prefix + text),
-so a query embedded via encode_query() is compatible with either index.
+Input CSV columns (produced by chunker):
+    siman       (int)   — chapter number
+    seif        (int)   — section number
+    siman_seif  (str)   — "סימן N, סעיף M"
+    text        (str)   — clean seif content
 
-Input CSV columns (produced by chunker.build_csv):
-    siman, seif, text
-
-Public API:
-    build_embeddings(csv, npy, model, ...)     → writes NPY
-    encode_query(query, model, ...)            → np.ndarray (1D, normalized)
-    load_chunks(csv)                           → list[dict]       (legacy helper)
-    embed(model, texts)                        → list[list[float]] (legacy helper)
-    store_in_chroma(chunks, vectors, ...)      → writes ChromaDB   (legacy helper)
-
-CLI (legacy Chroma path):
+Usage:
     python embed.py --chunks path/to/chunks.csv
+    python embed.py --chunks chunks.csv --model intfloat/multilingual-e5-large
+    python embed.py --chunks chunks.csv --chroma-dir ./my_chroma
 """
 
 import argparse
 import time
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
+import chromadb
 from sentence_transformers import SentenceTransformer
-# chromadb is imported lazily inside store_in_chroma — it's only needed for the
-# legacy Chroma CLI path, not for the NPY pipeline used by exp_main.py.
 
 # ─── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_MODEL      = "intfloat/multilingual-e5-large"
@@ -39,95 +31,29 @@ DEFAULT_COLLECTION = "shulchan_arukh_seifs"
 BATCH_SIZE         = 32
 
 
-# ─── Shared helpers ────────────────────────────────────────────────────────────
-
 def load_chunks(csv_path: Path) -> list[dict]:
-    """Load chunks CSV produced by the chunker. Requires siman, seif, text."""
+    """Load chunks CSV produced by the chunker."""
     df = pd.read_csv(csv_path)
-    required = {"siman", "seif", "text"}
+    required = {"siman", "seif", "siman_seif", "text"}
     missing = required - set(df.columns)
     if missing:
-        raise ValueError(
-            f"Missing columns in CSV: {missing}. "
-            f"Expected at least {sorted(required)}."
-        )
+        raise ValueError(f"Missing columns in CSV: {missing}")
     print(f"  {len(df)} seifs loaded from {csv_path.name}")
     return df.to_dict("records")
 
 
-def _build_passage_texts(chunks: list[dict], prefix_passage: str) -> list[str]:
+def build_encoding_texts(chunks: list[dict]) -> list[str]:
     """
-    Build the passage text for each chunk:
-        "<prefix_passage><text>"
+    Build the text string that gets embedded for each seif.
+    E5 models require "passage: " prefix for corpus texts.
+    Context prefix (siman_seif) is prepended so the model
+    knows where in the text this seif comes from.
     """
     return [
-        prefix_passage + row["text"]
+        "passage: " + "שולחן ערוך אורח חיים, " + row["siman_seif"] + ": " + row["text"]
         for row in chunks
     ]
 
-
-# ─── Public API — NPY path (used by exp_main orchestrator) ─────────────────────
-
-def build_embeddings(
-    csv:            str | Path,
-    npy:            str | Path,
-    model:          str = DEFAULT_MODEL,
-    batch_size:     int = BATCH_SIZE,
-    prefix_passage: str = "passage: ",
-) -> Path:
-    """
-    Pipeline entry point: chunks CSV → embeddings NPY.
-
-    Loads chunks, prepends prefix_passage, encodes, saves .npy.
-    Creates parent directories if needed. Returns the NPY path.
-    """
-    print(f"  Loading chunks from {Path(csv).name}")
-    chunks = load_chunks(Path(csv))
-
-    print(f"  Building passage texts (prefix={prefix_passage!r})")
-    texts = _build_passage_texts(chunks, prefix_passage)
-
-    print(f"  Loading model: {model}")
-    m = SentenceTransformer(model)
-    print(f"  Vector dim: {m.get_sentence_embedding_dimension()}")
-
-    print(f"  Encoding {len(texts)} passages (batch_size={batch_size})...")
-    t0 = time.time()
-    vectors = m.encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=True,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
-    print(f"  Done in {time.time() - t0:.1f}s — shape {vectors.shape}")
-
-    npy = Path(npy)
-    npy.parent.mkdir(parents=True, exist_ok=True)
-    np.save(str(npy), vectors)
-    print(f"  Saved embeddings to {npy}")
-    return npy
-
-
-def encode_query(
-    query:        str,
-    model:        str | SentenceTransformer = DEFAULT_MODEL,
-    prefix_query: str = "query: ",
-) -> np.ndarray:
-    """
-    Encode a single query into a normalized 1D vector.
-    Accepts either a model name (loads it) or an already-loaded SentenceTransformer.
-    """
-    m = model if isinstance(model, SentenceTransformer) else SentenceTransformer(model)
-    text = prefix_query + query
-    return m.encode(
-        text,
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-    )
-
-
-# ─── Legacy Chroma path (kept for backwards compatibility) ─────────────────────
 
 def embed(model: SentenceTransformer, texts: list[str]) -> list[list[float]]:
     """Encode all texts into normalized float32 vectors."""
@@ -151,8 +77,6 @@ def store_in_chroma(
     collection_name: str,
 ) -> None:
     """Store embeddings + metadata in ChromaDB."""
-    import chromadb  # lazy — only needed for this legacy path
-
     client = chromadb.PersistentClient(path=str(chroma_dir))
 
     existing = [c.name for c in client.list_collections()]
@@ -173,7 +97,7 @@ def store_in_chroma(
             {
                 "siman":      int(row["siman"]),
                 "seif":       int(row["seif"]),
-                "siman_seif": f"{int(row['siman'])}:{int(row['seif'])}",  # built on-the-fly
+                "siman_seif": row["siman_seif"],
             }
             for row in chunks
         ],
@@ -188,7 +112,6 @@ def main():
     parser.add_argument("--model",      default=DEFAULT_MODEL,           help=f"Embedding model (default: {DEFAULT_MODEL})")
     parser.add_argument("--chroma-dir", default=str(DEFAULT_CHROMA_DIR), help="ChromaDB directory")
     parser.add_argument("--collection", default=DEFAULT_COLLECTION,      help="ChromaDB collection name")
-    parser.add_argument("--prefix-passage", default="passage: ",         help="Prefix used for passage encoding")
     args = parser.parse_args()
 
     csv_path   = Path(args.chunks)
@@ -202,7 +125,7 @@ def main():
     print(f"   Vector dim: {model.get_sentence_embedding_dimension()}")
 
     print(f"\n3. Building encoding texts...")
-    texts = _build_passage_texts(chunks, args.prefix_passage)
+    texts = build_encoding_texts(chunks)
 
     print(f"\n4. Embedding...")
     vectors = embed(model, texts)
