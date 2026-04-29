@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "config.yaml"
 
 
