@@ -1,4 +1,4 @@
-from .chunker import load_schema, build_dataframe
+from .chunker import load_schema, build_dataframe, build_tables
 
 
 def build_chunks(json_path, mode=None, chunk_fields=None) -> list[dict]:
@@ -6,4 +6,4 @@ def build_chunks(json_path, mode=None, chunk_fields=None) -> list[dict]:
     df = build_dataframe(schema, chunk_fields=chunk_fields, mode=mode)
     return [{"id": i, **row} for i, row in enumerate(df.to_dict(orient="records"))]
 
-__all__ = ["load_schema", "build_dataframe", "build_chunks"]
+__all__ = ["load_schema", "build_dataframe", "build_chunks", "build_tables"]

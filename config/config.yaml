@@ -41,6 +41,16 @@ chunker:
   siman_fields:         # ordered list of siman-level fields to prepend to each chunk
     - hilchot_group
     # - siman_sign
+  text_variants:        # list of named text-build configs; each produces one table in the output
+    - type_text: text+hagah
+      chunk_fields: [text, hagah]
+      siman_fields: []
+    - type_text: text_only
+      chunk_fields: [text]
+      siman_fields: []
+    - type_text: text+hilchot_group
+      chunk_fields: [text]
+      siman_fields: [hilchot_group]
 
 embeddings:
   chunk_file: *chunk_file

@@ -103,6 +103,36 @@ def _build_sliding_window_chunks(schema: dict, chunk_fields: list[str], siman_fi
     return rows
 
 
+def build_tables(schema: dict, variants: list[dict] | None = None) -> list[dict]:
+    """
+    Build one chunk table per variant defined in text_variants.
+
+    Args:
+        schema:   parsed JSON dict
+        variants: list of variant dicts (type_text, chunk_fields, siman_fields, mode).
+                  Defaults to chunker.text_variants from config.
+
+    Returns:
+        List of {metadata: {type_text}, data: [chunk rows]} objects.
+    """
+    if variants is None:
+        variants = load_config()["chunker"]["text_variants"]
+    tables = []
+    for variant in variants:
+        df = build_dataframe(
+            schema,
+            chunk_fields=variant.get("chunk_fields"),
+            siman_fields=variant.get("siman_fields", []),
+            mode=variant.get("mode"),
+        )
+        records = [{"id": i, **row} for i, row in enumerate(df.to_dict(orient="records"))]
+        tables.append({
+            "metadata": {"type_text": variant["type_text"]},
+            "data": records,
+        })
+    return tables
+
+
 _DISPATCH = {
     "seif":           _build_seif_chunks,
     "siman":          _build_siman_chunks,
