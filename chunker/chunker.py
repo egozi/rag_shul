@@ -33,39 +33,41 @@ def load_schema(json_path: str | Path) -> dict:
         return json.load(f)
 
 
-def _build_seif_chunks(schema: dict, chunk_fields: list[str]) -> list[dict]:
+def _build_seif_chunks(schema: dict, chunk_fields: list[str], siman_fields: list[str]) -> list[dict]:
     rows = []
     for siman_data in schema["simanim"]:
         siman_num = siman_data["siman"]
+        siman_parts = [siman_data.get(f) for f in siman_fields if siman_data.get(f)]
         for seif_data in siman_data["seifim"]:
             seif_num = seif_data["seif"]
-            parts = [seif_data.get(f) for f in chunk_fields if seif_data.get(f)]
+            seif_parts = [seif_data.get(f) for f in chunk_fields if seif_data.get(f)]
             rows.append({
                 "siman":      siman_num,
                 "seif":       seif_num,
                 "siman_seif": f"סימן {siman_num}, סעיף {seif_num}",
-                "text":       " ".join(parts),
+                "text":       " ".join(siman_parts + seif_parts),
             })
     return rows
 
 
-def _build_siman_chunks(schema: dict, chunk_fields: list[str]) -> list[dict]:
+def _build_siman_chunks(schema: dict, chunk_fields: list[str], siman_fields: list[str]) -> list[dict]:
     rows = []
     for siman_data in schema["simanim"]:
         siman_num = siman_data["siman"]
-        parts = []
+        siman_parts = [siman_data.get(f) for f in siman_fields if siman_data.get(f)]
+        seif_parts = []
         for seif_data in siman_data["seifim"]:
-            parts += [seif_data.get(f) for f in chunk_fields if seif_data.get(f)]
+            seif_parts += [seif_data.get(f) for f in chunk_fields if seif_data.get(f)]
         rows.append({
             "siman":      siman_num,
             "seif":       None,
             "siman_seif": f"סימן {siman_num}",
-            "text":       " ".join(parts),
+            "text":       " ".join(siman_parts + seif_parts),
         })
     return rows
 
 
-def _build_sliding_window_chunks(schema: dict, chunk_fields: list[str]) -> list[dict]:
+def _build_sliding_window_chunks(schema: dict, chunk_fields: list[str], siman_fields: list[str]) -> list[dict]:
     cfg = load_config()["chunker"]
     chunk_size = cfg["chunk_size"]
     overlap = cfg["overlap"]
@@ -75,6 +77,10 @@ def _build_sliding_window_chunks(schema: dict, chunk_fields: list[str]) -> list[
     word_siman: list[int] = []
     for siman_data in schema["simanim"]:
         siman_num = siman_data["siman"]
+        siman_parts = [siman_data.get(f) for f in siman_fields if siman_data.get(f)]
+        siman_prefix_words = " ".join(siman_parts).split() if siman_parts else []
+        all_words.extend(siman_prefix_words)
+        word_siman.extend([siman_num] * len(siman_prefix_words))
         for seif_data in siman_data["seifim"]:
             parts = [seif_data.get(f) for f in chunk_fields if seif_data.get(f)]
             words = " ".join(parts).split()
@@ -103,13 +109,14 @@ _DISPATCH = {
 }
 
 
-def build_dataframe(schema: dict, chunk_fields: list[str] | None = None, mode: str | None = None) -> pd.DataFrame:
+def build_dataframe(schema: dict, chunk_fields: list[str] | None = None, siman_fields: list[str] | None = None, mode: str | None = None) -> pd.DataFrame:
     """
     Convert the RAG JSON dict into a flat DataFrame.
 
     Args:
         schema:       parsed JSON dict
         chunk_fields: seif fields to join into the text column (defaults to config)
+        siman_fields: siman-level fields to prepend to each chunk (defaults to config)
         mode:         "seif" | "siman" | "sliding_window" (defaults to config)
 
     Returns:
@@ -119,12 +126,14 @@ def build_dataframe(schema: dict, chunk_fields: list[str] | None = None, mode: s
     cfg = load_config()["chunker"]
     if chunk_fields is None:
         chunk_fields = cfg["chunk_fields"]
+    if siman_fields is None:
+        siman_fields = cfg.get("siman_fields", [])
     if mode is None:
         mode = cfg["mode"]
 
     if mode not in _DISPATCH:
         raise ValueError(f"Unknown chunker mode: {mode!r}. Choose from {list(_DISPATCH)}")
 
-    rows = _DISPATCH[mode](schema, chunk_fields)
+    rows = _DISPATCH[mode](schema, chunk_fields, siman_fields)
     df = pd.DataFrame(rows)
     return df.sort_values(["siman"]).reset_index(drop=True)

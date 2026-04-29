@@ -10,6 +10,7 @@ Usage:
     python -m chunker.main --input data/processed/shulchan_aruch_rag.json --output data/chunks.json
 """
 
+
 import argparse
 import json
 from pathlib import Path
