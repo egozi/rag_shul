@@ -1,0 +1,142 @@
+"""
+ChromaRetriever — semantic retrieval from a ChromaDB collection
+===============================================================
+Queries the ChromaDB collection built by embedder/embed.py.
+Supports filtering by one variant, multiple variants, or all variants.
+When multiple variants are requested, each variant is queried independently
+and returns top_k results — so the total returned is top_k × len(variants).
+
+Usage:
+    from retrievers import get_retriever
+
+    # single variant
+    r = get_retriever("chroma", type_text="text+hagah")
+    results = r.retrieve("מה דין ציצית?", top_k=10)
+
+    # multiple variants — 10 results each
+    r = get_retriever("chroma", type_text=["text+hagah", "text_only"])
+    results = r.retrieve("מה דין ציצית?", top_k=10)  # 20 total
+
+    # all variants in the collection
+    r = get_retriever("chroma", type_text=None)
+    results = r.retrieve("מה דין ציצית?", top_k=10)  # 30 total (3 variants × 10)
+"""
+
+from pathlib import Path
+
+import chromadb
+
+from .base import BaseRetriever
+from embedder.embed import encode_query, _get_model
+
+DEFAULT_MODEL      = "intfloat/multilingual-e5-large"
+DEFAULT_CHROMA_DIR = Path(__file__).parent.parent / "embedder" / "chroma_db"
+DEFAULT_COLLECTION = "shulchan_arukh_seifs"
+
+
+class ChromaRetriever(BaseRetriever):
+
+    @property
+    def name(self) -> str:
+        return "chroma"
+
+    def __init__(
+        self,
+        type_text:       "str | list[str] | None" = "text+hagah",
+        chroma_dir:      "str | Path" = DEFAULT_CHROMA_DIR,
+        collection_name: str = DEFAULT_COLLECTION,
+        model:           str = DEFAULT_MODEL,
+        prefix_query:    str = "query: ",
+        **_ignored,
+    ):
+        """
+        Args:
+            type_text:       variant(s) to query.
+                             str   → single variant
+                             list  → multiple variants, top_k results each
+                             None  → all variants in the collection, top_k each
+            chroma_dir:      path to the ChromaDB directory (embedder/chroma_db)
+            collection_name: ChromaDB collection name
+            model:           embedding model name (must match the one used at embed time)
+            prefix_query:    E5 query prefix (default: "query: ")
+        """
+        self._chroma_dir      = Path(chroma_dir)
+        self._collection_name = collection_name
+        self._type_text       = type_text
+        self._model_name      = model
+        self._prefix_query    = prefix_query
+
+        if not self._chroma_dir.exists():
+            raise FileNotFoundError(
+                f"ChromaDB directory not found: {self._chroma_dir}\n"
+                f"Run: python embedder/embed.py --chunks data/chunks_siman.json"
+            )
+
+        # Lazily loaded
+        self._model      = None
+        self._collection = None
+        self._variants: list[str] | None = None
+
+    def _load(self) -> None:
+        """Lazy load — happens once per instance."""
+        if self._model is not None:
+            return
+
+        self._model = _get_model(self._model_name)
+
+        client = chromadb.PersistentClient(path=str(self._chroma_dir))
+        self._collection = client.get_collection(self._collection_name)
+
+        if self._type_text is None:
+            result = self._collection.get(include=["metadatas"])
+            self._variants = sorted(
+                {m["type_text"] for m in result["metadatas"] if "type_text" in m}
+            )
+        elif isinstance(self._type_text, str):
+            self._variants = [self._type_text]
+        else:
+            self._variants = list(self._type_text)
+
+    def retrieve(self, query: str, top_k: int = 10) -> list[dict]:
+        """
+        Retrieve top_k chunks per variant.
+
+        Returns a flat list — all variants concatenated, each result labeled
+        with its type_text. Total results = top_k × len(variants).
+
+        Each result dict contains:
+            rank, chunk_id, score, text, siman_parent, siman, seif, type_text
+        """
+        self._load()
+
+        vec = encode_query(query, model=self._model, prefix_query=self._prefix_query)
+
+        all_results = []
+        for variant in self._variants:
+            raw = self._collection.query(
+                query_embeddings=[vec.tolist()],
+                n_results=top_k,
+                where={"type_text": variant},
+                include=["documents", "metadatas", "distances"],
+            )
+
+            ids        = raw["ids"][0]
+            documents  = raw["documents"][0]
+            metadatas  = raw["metadatas"][0]
+            distances  = raw["distances"][0]
+
+            for rank, (chunk_id, doc, meta, dist) in enumerate(
+                zip(ids, documents, metadatas, distances), start=1
+            ):
+                all_results.append({
+                    "rank":         rank,
+                    "chunk_id":     chunk_id,
+                    "score":        round(1.0 - dist, 4),
+                    "text":         doc,
+                    "siman_parent": int(meta["siman"]),
+                    "siman":        int(meta["siman"]),
+                    "seif":         int(meta["seif"]),
+                    "type_text":    meta["type_text"],
+                })
+
+        return all_results
