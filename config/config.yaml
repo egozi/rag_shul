@@ -3,34 +3,35 @@
 # Experiment settings. Paths are relative to the experiments/ directory.
 #
 # Pipeline flow (exp_main.py):
-#   1. chunker.build_csv:        json_file   →  chunks_csv
-#   2. embed.build_embeddings:   chunks_csv  →  embeddings_npy
-#   3. retriever (retrieval_npy): chunks_csv + embeddings_npy + query → results
-#   4. evaluator:                 retriever  + csv_path → report
+#   1. chunker.build_chunks_json: json_file    →  chunks_json
+#   2. embed.build_embeddings:    chunks_json  →  embeddings_npy
+#   3. retriever (retrieval_npy): chunks_json + embeddings_npy + query → results
+#   4. evaluator:                 retriever   + csv_path → report
 #
 # Skip logic (handled in exp_main):
 #   • embeddings_npy exists       → skip stages 1 and 2
-#   • chunks_csv exists, no npy   → skip stage 1 only
+#   • chunks_json exists, no npy  → skip stage 1 only
 #   • neither exists              → full run
 #   • --force-rebuild             → delete everything and rerun
 
 # Run mode: full = real data | mini = small smoke-test data
 # Can also be overridden on the command line: --mode full / --mode mini
-run_mode: mini        # full | mini
-rebuild: false
+#run_mode: &run_mode quick        # quick | full | mini
+rebuild: &rebuild false
+log_level: INFO   # DEBUG / INFO / WARNING / ERROR / CRITICAL
 
 paths:
 
-  json_file:       "../data/processed/shulchan_aruch_rag.json"
-  chunks_csv:      "chunks_v1.csv"                              # ← changed
-  embeddings_npy:  "embeddings_v1.npy"
-  csv_path:        "../data/eval/sa_eval.csv"
-  schema_json: "data/processed/shulchan_aruch_rag_with_breadcrumb.json"
-  chunks_json: "data/chunks_siman.json"
-
+  data_file: "data/processed/shulchan_aruch_rag.json"
+  chunks_json: &chunk_file "data/chunks.json"
+  embeddings_file:  &embeddings_file "data/embeddings.npy"
+  csv_path: "data/eval/sa_eval.csv" # benchmark questions (real CSV)
+ 
 chunker:
+  #run_mode: *run_mode
+  rebuild: *rebuild
   chunk_size: 200       # words per chunk
-  chunk_output_file: &chunk_file "chunks.json"
+  chunk_file: *chunk_file
   output_type: "json"
   overlap: 50           # words shared between consecutive chunks
   mode: seif            # "seif" | "siman" | "sliding_window"
@@ -53,9 +54,11 @@ chunker:
       siman_fields: [hilchot_group]
 
 embeddings:
+  #run_mode: *run_mode
+  rebuild: *rebuild 
   chunk_file: *chunk_file
+  embeddings_file: *embeddings_file
   model: "intfloat/multilingual-e5-large"
-  prompt: ""
   batch_size: 32
   prefix_passage: "passage: "   # prepended to breadcrumb+text during build_embeddings
   prefix_query:   "query: "     # prepended to the query during retriever.retrieve
@@ -64,7 +67,11 @@ embeddings:
 
 
 retrieval:
+  #run_mode: *run_mode
+  rebuild: *rebuild
   chunk_file: *chunk_file
+  embeddings_file: *embeddings_file
+  prompt: ""
   top_k:          3     # chunks returned to the user / LLM
   top_k_retrieve: 10    # chunks retrieved for Recall@K computation
   score_threshold: 0.85
@@ -73,6 +80,7 @@ query:
   prompt: ""
 
 evaluation:
+  #run_mode: *run_mode
   # Evaluator type: 'retrieval' (Exists) or 'llm_qa' (future)
   type: "retrieval"
 
