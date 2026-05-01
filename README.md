@@ -1,20 +1,62 @@
 # rag_shul
-Run from the exp_main.py 
-Files are created next to the exp_main.py file to examine the project flow.
-config.yaml settings.
+
+RAG pipeline over the Shulchan Arukh (Orach Chaim), with a Hebrew chat UI for comparing retrieval-augmented answers against plain GPT answers.
 
 ---
 
 ## Pipeline Overview
 
-A RAG pipeline over the Shulchan Arukh (Orach Chaim), built in five stages:
-
 ```
-Preprocess Data  →  Chunker  →  Embedder  →  Retriever  →  Evaluation
- data/scripts/      chunker/    embedder/    retrievers/   evaluation/
+Preprocess Data  →  Chunker  →  Embedder  →  Retriever  →  Chat UI / Evaluation
+ data/scripts/      chunker/    embedder/    retrievers/    chat-ui/   evaluation/
 ```
 
-Each stage is an independent module. Read that module's section below before touching its code.
+Each stage is an independent module. Config lives in `config/config.yaml`.
+
+---
+
+## Quick Start — Chat UI
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Add your OpenAI API key
+cp chat-ui/.env.example chat-ui/.env
+# edit chat-ui/.env and set OPENAI_API_KEY=sk-...
+
+# 3. Build the ChromaDB (first time only — takes ~2 hours)
+python3 embedder/embed.py --chunks data/chunks_siman.json
+
+# 4. Run the local server
+cd chat-ui
+python3 server.py
+```
+
+Open [http://localhost:3000](http://localhost:3000)
+
+---
+
+## Chat UI — Features
+
+Three tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **שאלות מאגר** | Browse and search 600 eval questions. Click "השווה" to load a question into the comparison tab. |
+| **השוואה** | Side-by-side: GPT-4o-mini without RAG vs GPT-4o-mini with RAG (Shulchan Arukh). Adjustable K (1/3/5/10). Shows retrieved chunks + Recall@K/MRR when question is from the eval set. Vote which answer is better. |
+| **סטטיסטיקות** | Aggregated vote counts and retrieval metrics (Recall@K, MRR). Persisted in localStorage. |
+
+### Chat UI Files
+
+| File | Purpose |
+|------|---------|
+| `chat-ui/server.py` | Local dev server — serves static files and routes API calls |
+| `chat-ui/index.html` | Frontend — three-tab comparison UI |
+| `chat-ui/api/chat.py` | POST `/api/chat` — calls ChromaRetriever then OpenAI |
+| `chat-ui/api/eval.py` | GET `/api/eval` — serves the eval CSV as JSON |
+| `chat-ui/.env` | API key file (not committed) |
+| `chat-ui/.env.example` | Template |
 
 ---
 
@@ -26,282 +68,198 @@ Converts the raw source text into a structured JSON file ready for chunking. Run
 
 Parses the raw Torat Emet TXT file and produces the canonical RAG JSON.
 
-**Input**
+**Input:** `data/source_original/data_fixed.txt`
 
-`data/source_original/data_fixed.txt` — raw Shulchan Arukh text (Torat Emet edition)
-
-**Output**
-
-`data/processed/shulchan_aruch_rag.json`
+**Output:** `data/processed/shulchan_aruch_rag.json`
 
 ```json
 {
   "title": "שולחן ערוך, אורח חיים",
-  "source": "Torat Emet 363",
   "simanim": [
     {
       "siman": 1,
-      "seifim": [
-        { "seif": 1, "text": "...", "hagah": "...", "text_raw": "..." }
-      ]
+      "seifim": [{ "seif": 1, "text": "...", "hagah": "..." }]
     }
   ]
 }
 ```
 
-**Run (CLI)**
-
 ```bash
-# zero-config (uses default paths)
 python data/scripts/build_shulchan_aruch_rag.py
-
-# explicit paths
-python data/scripts/build_shulchan_aruch_rag.py --input path/to/raw.txt --output out.json
-
-# regression test suite
-python data/scripts/build_shulchan_aruch_rag.py --test
+python data/scripts/build_shulchan_aruch_rag.py --test   # regression tests
 ```
-
-**Options**
-
-| Flag | Description |
-|------|-------------|
-| `--input, -i` | Input TXT file (default: `data/source_original/data_fixed.txt`) |
-| `--output, -o` | Output JSON file (default: `data/processed/shulchan_aruch_rag.json`) |
-| `--test` | Run built-in regression tests |
-| `--quiet, -q` | Suppress progress output |
-
-> CLI-only — no Python API.
-
----
 
 ### Script B — `add_breadcrumb_to_json.py`
 
-Enriches the RAG JSON with hierarchical headings (hilchot group + siman title).
+Adds `hilchot_group` and `siman_sign` headings to each siman.
 
-**Input**
-
-- `data/processed/shulchan_aruch_rag.json` (output of Script A)
-- `data/source_original/Shulchan_Aruch_Text_Headlines.txt` — table of contents / siman headings
-
-**Output**
-
-`data/processed/shulchan_aruch_rag_with_breadcrumb.json`
-
-Adds two fields to each siman:
-
-```json
-{
-  "siman": 1,
-  "hilchot_group": "הלכות הנהגת אדם בבוקר",
-  "siman_sign": "דין השכמת הבוקר",
-  "seifim": [ ... ]
-}
-```
-
-**Run (CLI)**
+**Output:** `data/processed/shulchan_aruch_rag_with_breadcrumb.json`
 
 ```bash
-# zero-config
 python data/scripts/add_breadcrumb_to_json.py
-
-# explicit paths
-python data/scripts/add_breadcrumb_to_json.py \
-    --json data/processed/shulchan_aruch_rag.json \
-    --headings data/source_original/Shulchan_Aruch_Text_Headlines.txt \
-    --output data/processed/shulchan_aruch_rag_with_breadcrumb.json
-
-# regression tests
-python data/scripts/add_breadcrumb_to_json.py --test
 ```
-
-**Options**
-
-| Flag | Description |
-|------|-------------|
-| `--json, -j` | Input JSON file |
-| `--headings, -H` | Headings TXT file |
-| `--output, -o` | Output JSON file |
-| `--test` | Run built-in regression tests |
-| `--quiet, -q` | Suppress progress output |
-
-> CLI-only — no Python API.
 
 ---
 
 ## Stage 2 — Chunker (`chunker/`)
 
-Reads the RAG JSON and produces a `chunks.json` file for the embedder.
+Reads the RAG JSON and produces a multi-variant chunks file for the embedder.
 
-**Input**
+**Input:** `data/processed/shulchan_aruch_rag.json`
 
-`data/processed/shulchan_aruch_rag.json`
-
-```json
-{
-  "simanim": [
-    {
-      "siman": 1,
-      "seifim": [
-        { "seif": 1, "text": "...", "hagah": "..." }
-      ]
-    }
-  ]
-}
-```
-
-**Output**
-
-`data/chunks.json` — a JSON array, one object per chunk:
+**Output:** `data/chunks_siman.json` — array of variant tables, each with metadata and chunk list:
 
 ```json
 [
-  { "id": 0, "siman": 1, "seif": 1, "siman_seif": "סימן 1, סעיף 1", "text": "..." },
-  { "id": 1, "siman": 1, "seif": null, "siman_seif": "סימן 1", "text": "..." }
+  {
+    "metadata": { "type_text": "text+hagah" },
+    "data": [{ "siman": 1, "seif": 1, "text": "..." }]
+  }
 ]
 ```
 
-`seif` is `null` for siman-level and sliding-window chunks.
-
-**Options (`config/config.yaml`)**
-
-```yaml
-chunker:
-  mode: seif            # seif | siman | sliding_window
-  chunk_size: 200       # words per chunk (sliding_window only)
-  overlap: 50           # overlapping words between chunks (sliding_window only)
-  chunk_fields:
-    - text              # always included
-    # - hagah           # uncomment to append Rema commentary
-    # - siman_title     # uncomment to prepend the siman heading
-```
-
-| Mode | Description |
-|------|-------------|
-| `seif` | One chunk per seif (default) |
-| `siman` | One chunk per siman (all seifim merged) |
-| `sliding_window` | Fixed word-count windows across the full corpus |
-
-**Run (CLI)**
+Three variants are built: `text+hagah`, `text_only`, `text+hilchot_group`.
 
 ```bash
 python -m chunker.main
-# or with explicit paths:
-python -m chunker.main --input data/processed/shulchan_aruch_rag.json --output data/chunks.json
 ```
 
-**Use as API**
+**Python API:**
 
 ```python
-from chunker import build_chunks
+from chunker import load_schema, build_tables
 
-chunks = build_chunks("data/processed/shulchan_aruch_rag.json")
-# returns list[dict] with id, siman, seif, siman_seif, text
-
-# override mode or fields without touching config:
-chunks = build_chunks("data/processed/shulchan_aruch_rag.json", mode="siman", chunk_fields=["text", "hagah"])
+schema = load_schema("data/processed/shulchan_aruch_rag.json")
+tables = build_tables(schema)
 ```
 
 ---
 
 ## Stage 3 — Embedder (`embedder/`)
 
-Encodes the chunks into dense vector embeddings and saves them as a `.npy` matrix.
+Encodes all chunks into dense vector embeddings and stores them in ChromaDB.
 
-**Input**
+**Model:** `intfloat/multilingual-e5-large` (1024-dim, L2-normalized)
 
-`data/chunks.csv` — chunks table with columns: `siman`, `seif`, `text`
+**E5 prefix convention:** `"passage: "` for corpus, `"query: "` at retrieval time
 
-**Output**
+**Input:** `data/chunks_siman.json` (output of Stage 2)
 
-`data/embeddings.npy` — normalized float32 matrix, one row per chunk (same order as CSV)
+**Output:** `embedder/chroma_db/` — ChromaDB collection `shulchan_arukh_seifs`
 
-**Options (`config/config.yaml`)**
-
-```yaml
-embeddings:
-  model: intfloat/multilingual-e5-large
-  batch_size: 32
-  prefix_passage: "passage: "
-  prefix_query: "query: "
-  enrich_fields: []        # optional extra fields to concatenate into the passage
-  enrich_separator: " | "
-```
-
-**Run (CLI)**
+Current corpus: **12,504 records** (3 variants × 4,168 chunks from 688 simanim)
 
 ```bash
-python embedder/embed.py --chunks data/chunks.csv
-# with explicit output path:
-python embedder/embed.py --chunks data/chunks.csv --npy data/embeddings.npy --model intfloat/multilingual-e5-large
+python3 embedder/embed.py --chunks data/chunks_siman.json
+
+# with explicit model / collection:
+python3 embedder/embed.py \
+    --chunks data/chunks_siman.json \
+    --model intfloat/multilingual-e5-large \
+    --collection shulchan_arukh_seifs
 ```
 
-**Use as API**
+Skip logic: already-embedded variants are detected and skipped automatically.
+
+**Python API:**
 
 ```python
-from embedder.embed import build_embeddings, encode_query
+from embedder.embed import encode_query, _get_model
 
-# build the full embeddings matrix
-build_embeddings("data/chunks.csv", "data/embeddings.npy")
-
-# encode a single query at retrieval time
-query_vec = encode_query("מה דין ציצית?")
+model = _get_model("intfloat/multilingual-e5-large")
+vec = encode_query("מה דין ציצית?", model=model, prefix_query="query: ")
 ```
 
 ---
 
 ## Stage 4 — Retriever (`retrievers/`)
 
-> **Status: implementation in progress.** This section describes the intended interface in general terms.
+**Implemented:** `ChromaRetriever` — queries the ChromaDB collection built in Stage 3.
 
-**Input**
+```python
+from retrievers import get_retriever
 
-- A user query (string)
-- The embedded vector database (`.npy` matrix + chunks metadata from Stage 3)
+# single variant (default)
+r = get_retriever("chroma", type_text="text+hagah")
+results = r.retrieve("מה דין ציצית?", top_k=5)
 
-**Output**
+# multiple variants — top_k results each
+r = get_retriever("chroma", type_text=["text+hagah", "text_only"])
+results = r.retrieve("מה דין ציצית?", top_k=5)  # 10 total
 
-A ranked list of the most relevant chunks, each with a relevance score and source metadata (siman, seif, text).
+# all variants
+r = get_retriever("chroma", type_text=None)
+results = r.retrieve("מה דין ציצית?", top_k=5)  # 15 total
+```
 
-**Expected behavior**
+Each result dict:
 
-Given a query, embed it with the same model used in Stage 3, search the embedding space, and return the top-K most similar chunks.
+```python
+{
+  "rank": 1,
+  "chunk_id": "text+hagah__siman_1_seif_1",
+  "score": 0.87,        # cosine similarity (1 - L2 distance)
+  "text": "...",
+  "siman": 1,
+  "seif": 1,
+  "type_text": "text+hagah"
+}
+```
 
-**Options (`config/config.yaml`)**
-
-| Key | Description |
-|-----|-------------|
-| `top_k` | Number of chunks returned to the caller |
-| `score_threshold` | Minimum similarity score to include a result |
-
-> Detailed API, available retriever types, and run commands will be added once the implementation is stable.
+The retriever loads lazily — the embedding model and ChromaDB client are initialized on the first `retrieve()` call.
 
 ---
 
 ## Stage 5 — Evaluation (`evaluation/`)
 
-> **Status: implementation in progress.** This section describes the intended interface in general terms.
+**Input:** `data/eval/sa_eval.csv` — 600 questions with correct siman/seif labels
 
-**Input**
+**Metrics:** Recall@K, MRR (computed per-question against the correct siman)
 
-- A configured retriever (Stage 4)
-- A benchmark CSV of questions with known correct source simanim
+```python
+from evaluation import get_evaluator
+from retrievers import get_retriever
 
-**Output**
+retriever = get_retriever("chroma", type_text="text+hagah")
+evaluator = get_evaluator("retrieval", retriever=retriever)
+report = evaluator.evaluate("data/eval/sa_eval.csv", top_k=5)
+```
 
-Evaluation metrics report (Recall@K, MRR) saved as `.txt` and `.json`.
+Interactive per-question evaluation is also available through the Chat UI's **השוואה** tab.
 
-**Expected behavior**
+---
 
-For each benchmark question, run the retriever and check whether the correct siman appears within the top-K results. Aggregate across all questions into Recall@K and MRR scores.
+## Config (`config/config.yaml`)
 
-**Options (`config/config.yaml`)**
+All pipeline settings in one place:
 
-| Key | Description |
-|-----|-------------|
-| `k_values` | List of K values to compute Recall@K for |
-| `target_k` | K threshold for the pass/fail target |
-| `target_recall` | Minimum recall rate to pass |
-| `max_questions` | Limit evaluation to N questions (`null` = all) |
+```yaml
+paths:
+  data_file: "data/processed/shulchan_aruch_rag.json"
+  chunks_json: "data/chunks_siman.json"
 
-> Detailed API, available evaluator types, and run commands will be added once the implementation is stable.
+chunker:
+  mode: seif            # seif | siman | sliding_window
+
+embeddings:
+  model: intfloat/multilingual-e5-large
+  batch_size: 32
+
+retrieval:
+  top_k: 5
+  type_text: "text+hagah"
+
+evaluation:
+  k_values: [1, 3, 5, 10]
+  target_recall: 0.8
+```
+
+---
+
+## Requirements
+
+```bash
+pip install -r requirements.txt
+```
+
+Key dependencies: `openai`, `chromadb`, `sentence-transformers`, `torch`, `pyyaml`

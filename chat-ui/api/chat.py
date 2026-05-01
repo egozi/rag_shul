@@ -1,8 +1,13 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from openai import OpenAI
+from retrievers import get_retriever
 
 
 SYSTEM_PROMPT = """
@@ -16,6 +21,9 @@ SYSTEM_PROMPT = """
 ALLOWED_ROLES = {"user", "assistant"}
 MAX_MESSAGES = 12
 MAX_CONTENT_CHARS = 4000
+RETRIEVER_TOP_K = 3
+
+_retriever = get_retriever("chroma", type_text="text+hagah")
 
 
 class handler(BaseHTTPRequestHandler):
@@ -38,16 +46,38 @@ class handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": "חסר OPENAI_API_KEY בסביבת השרת."})
                 return
 
+            use_rag = bool(payload.get("use_rag", True))
+            last_question = messages[-1]["content"]
+            rag_chunks = []
+
+            if use_rag:
+                top_k = max(1, min(int(payload.get("top_k", RETRIEVER_TOP_K)), 20))
+                results = _retriever.retrieve(last_question, top_k=top_k)
+                rag_chunks = [
+                    {"siman": r["siman"], "seif": r["seif"], "text": r["text"], "score": r["score"]}
+                    for r in results
+                ]
+                context = "\n\n".join(
+                    f"סימן {r['siman']}, סעיף {r['seif']}:\n{r['text']}"
+                    for r in results
+                )
+                system_with_context = SYSTEM_PROMPT + f"\n\nקטעים רלוונטיים מהשולחן ערוך:\n{context}"
+            else:
+                system_with_context = SYSTEM_PROMPT
+
             client = OpenAI(api_key=api_key)
             response = client.chat.completions.create(
                 model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+                messages=[{"role": "system", "content": system_with_context}] + messages,
                 temperature=0.35,
                 max_tokens=1200,
             )
 
             reply = response.choices[0].message.content or ""
-            self._send_json(200, {"reply": reply.strip()})
+            payload_out = {"reply": reply.strip()}
+            if rag_chunks:
+                payload_out["chunks"] = rag_chunks
+            self._send_json(200, payload_out)
         except json.JSONDecodeError:
             self._send_json(400, {"error": "בקשת JSON לא תקינה."})
         except Exception as exc:
